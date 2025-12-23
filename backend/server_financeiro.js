@@ -57,6 +57,33 @@ app.put('/api/fin/empresas/:id', (req,res)=>{
   const id = req.params.id;
   const { nome, cnpj, ativo } = req.body;
   if (!nome) return res.status(400).json({ error:'params' });
+
+// Criar empresa
+app.post('/api/fin/empresas', (req,res)=>{
+  const { nome, cnpj } = req.body;
+  if (!nome) return res.status(400).json({ error:'params' });
+  db.run('INSERT INTO empresas (nome, cnpj, ativo) VALUES (?,?,1)', [String(nome).trim(), String(cnpj||'').trim()], function(err){
+    if (err) return res.status(500).json({ error:'db' });
+    const newId = this.lastID;
+    // cria config de impostos default (se não existir)
+    db.run(
+      `INSERT INTO impostos_config (empresa_id,simples_percent,taxas_percent,outros_percent,atualizado_em)
+       VALUES (?,?,?,?,datetime('now'))
+       ON CONFLICT(empresa_id) DO NOTHING`,
+      [newId, 0, 0, 0],
+      ()=> res.json({ id: newId })
+    );
+  });
+});
+
+
+  db.run('INSERT INTO empresas (nome, cnpj, ativo) VALUES (?,?,1)', [String(nome).trim(), String(cnpj||'').trim()], function(err){
+    if (err) return res.status(500).json({ error:'db' });
+    res.json({ id: this.lastID });
+  });
+});
+
+
   db.run('UPDATE empresas SET nome=?, cnpj=?, ativo=? WHERE id=?',
     [String(nome).trim(), String(cnpj||'').trim(), (ativo===undefined?1:Number(ativo)), id],
     (err)=>{

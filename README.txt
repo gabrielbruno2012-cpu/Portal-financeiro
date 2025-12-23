@@ -10,3 +10,7 @@ Rodar:
 3) http://localhost:3000/finance/login.html
 
 Banco: backend/sql/financeiro.db
+
+Novidades v3:
+- /finance/empresas.html para adicionar/editar empresas
+- Dashboard com gráfico de evolução + projeção + PDF
