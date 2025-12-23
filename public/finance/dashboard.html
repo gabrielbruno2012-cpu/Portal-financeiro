@@ -17,6 +17,7 @@
       <select id="mes" class="input"></select>
       <select id="ano" class="input"></select>
       <button class="btn" onclick="carregar()">Atualizar</button>
+      <button class="btn secondary" onclick="gerarPDF()">📑 Gerar PDF</button>
       <span id="health" class="badge verde" style="margin-left:auto;">—</span>
     </div>
 
@@ -27,6 +28,9 @@
       <div class="card"><h3>Despesas</h3><div class="val" id="cDespesas">R$ 0,00</div></div>
       <div class="card"><h3>Resultado</h3><div class="val" id="cResultado">R$ 0,00</div></div>
       <div class="card"><h3>Margem</h3><div class="val" id="cMargem">0%</div></div>
+      <div class="card"><h3>Projeção receita (próx. mês)</h3><div class="val" id="pReceitas">R$ 0,00</div></div>
+      <div class="card"><h3>Projeção despesas (próx. mês)</h3><div class="val" id="pDespesas">R$ 0,00</div></div>
+      <div class="card"><h3>Projeção resultado (próx. mês)</h3><div class="val" id="pResultado">R$ 0,00</div></div>
     </div>
 
     <div class="card" style="margin-top:14px;">
@@ -64,7 +68,28 @@ async function carregarEmpresas(){
   empresaSel.innerHTML = `<option value="all">Consolidado (3 empresas)</option>` + rows.map(e=>`<option value="${e.id}">${e.nome}</option>`).join('');
 }
 
+
+async function carregarProjecao(){
+  const empresa_id = empresaSel.value;
+  const mes = mesSel.value;
+  const ano = anoSel.value;
+  const r = await fetch(`/api/fin/projecao?empresa_id=${encodeURIComponent(empresa_id)}&mes=${mes}&ano=${ano}&n=6`);
+  if(!r.ok){ return; }
+  const d = await r.json();
+  const p = d.projecao || {};
+  document.getElementById('pReceitas').textContent = money(p.receitas);
+  document.getElementById('pDespesas').textContent = money(p.despesas);
+  document.getElementById('pResultado').textContent = money(p.resultado);
+}
+function gerarPDF(){
+  const empresa_id = empresaSel.value;
+  const mes = mesSel.value;
+  const ano = anoSel.value;
+  window.open(`/api/fin/relatorio/pdf?empresa_id=${encodeURIComponent(empresa_id)}&mes=${mes}&ano=${ano}`, '_blank');
+}
+
 async function carregar(){
+
   const empresa_id = empresaSel.value;
   const mes = mesSel.value;
   const ano = anoSel.value;

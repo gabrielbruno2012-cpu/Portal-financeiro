@@ -2,6 +2,7 @@ const express = require('express');
 const path = require('path');
 const bodyParser = require('body-parser');
 const sqlite3 = require('sqlite3').verbose();
+const PDFDocument = require('pdfkit');
 
 const app = express();
 app.use(bodyParser.json({ limit: '5mb' }));
@@ -11,6 +12,16 @@ app.use(express.static(path.join(__dirname, '../public')));
 
 const DB = path.join(__dirname, 'sql', 'financeiro.db');
 const db = new sqlite3.Database(DB);
+
+
+function monthKey(ano, mes){
+  return `${ano}-${String(mes).padStart(2,'0')}`;
+}
+function shiftMonth(ano, mes, delta){
+  const d = new Date(`${ano}-${String(mes).padStart(2,'0')}-01T00:00:00Z`);
+  d.setUTCMonth(d.getUTCMonth()+delta);
+  return { ano: d.getUTCFullYear(), mes: String(d.getUTCMonth()+1).padStart(2,'0') };
+}
 
 function toMonthRange(ano, mes) {
   const m = String(mes).padStart(2,'0');
@@ -40,6 +51,22 @@ app.post('/api/fin/login', (req,res)=>{
 app.get('/api/fin/empresas', (req,res)=>{
   db.all('SELECT id,nome,cnpj,ativo FROM empresas WHERE ativo=1 ORDER BY id', [], (err,rows)=>{
     if (err) return res.status(500).json({ error:'db' });
+
+// Atualizar empresa (nome/cnpj)
+app.put('/api/fin/empresas/:id', (req,res)=>{
+  const id = req.params.id;
+  const { nome, cnpj, ativo } = req.body;
+  if (!nome) return res.status(400).json({ error:'params' });
+  db.run('UPDATE empresas SET nome=?, cnpj=?, ativo=? WHERE id=?',
+    [String(nome).trim(), String(cnpj||'').trim(), (ativo===undefined?1:Number(ativo)), id],
+    (err)=>{
+      if (err) return res.status(500).json({ error:'db' });
+      res.json({ ok:true });
+    }
+  );
+});
+
+
     res.json(rows);
   });
 });
@@ -149,6 +176,72 @@ app.delete('/api/fin/lancamentos/:id', (req,res)=>{
   });
 });
 
+
+// Projeção automática (média móvel) - receita/despesa/resultado
+// Usa os últimos N meses (default 6) e projeta o próximo mês pela média dos últimos 3 meses disponíveis.
+app.get('/api/fin/projecao', (req,res)=>{
+  const { empresa_id, ano, mes, n } = req.query;
+  if (!ano || !mes) return res.status(400).json({ error:'params' });
+
+  const N = Math.max(3, Math.min(24, Number(n||6)));
+  const meses = [];
+  for(let i=N-1;i>=0;i--){
+    const m = shiftMonth(Number(ano), Number(mes), -i);
+    meses.push(m);
+  }
+
+  const empresaWhere = (empresa_id && empresa_id !== 'all') ? ' AND empresa_id=?' : '';
+  const results = [];
+
+  const runOne = (i) => {
+    if (i >= meses.length) {
+      // projeção: média dos últimos 3 meses (ou menos se não tiver)
+      const tail = results.slice(-3).filter(x => (x.receitas>0 || x.despesas>0));
+      const denom = tail.length || 1;
+      const projReceitas = tail.reduce((a,x)=>a+x.receitas,0) / denom;
+      const projDespesas = tail.reduce((a,x)=>a+x.despesas,0) / denom;
+      const projResultado = projReceitas - projDespesas;
+      const next = shiftMonth(Number(ano), Number(mes), 1);
+
+      return res.json({
+        serie: results,
+        projecao: { ano: String(next.ano), mes: String(next.mes), receitas: projReceitas, despesas: projDespesas, resultado: projResultado }
+      });
+    }
+
+    const m = meses[i];
+    const range = toMonthRange(m.ano, m.mes);
+    const params = [range.start, range.end];
+    if (empresaWhere) params.push(empresa_id);
+
+    db.get(
+      `SELECT
+        SUM(CASE WHEN tipo='RECEITA' THEN valor ELSE 0 END) as receitas,
+        SUM(CASE WHEN tipo='DESPESA' THEN valor ELSE 0 END) as despesas
+       FROM lancamentos
+       WHERE data >= ? AND data < ? ${empresaWhere}`,
+      params,
+      (err,row)=>{
+        if (err) return res.status(500).json({ error:'db' });
+        const receitas = Number(row?.receitas||0);
+        const despesas = Number(row?.despesas||0);
+        results.push({
+          ano: String(m.ano),
+          mes: String(m.mes),
+          key: monthKey(m.ano, m.mes),
+          receitas,
+          despesas,
+          resultado: receitas - despesas
+        });
+        runOne(i+1);
+      }
+    );
+  };
+
+  runOne(0);
+});
+
+
 app.get('/api/fin/dashboard', (req,res)=>{
   const { empresa_id, ano, mes } = req.query;
   if (!ano || !mes) return res.status(400).json({ error:'params' });
@@ -224,6 +317,169 @@ app.get('/api/fin/dashboard', (req,res)=>{
     }
   });
 });
+
+
+// Relatório PDF mensal (server-side)
+app.get('/api/fin/relatorio/pdf', (req,res)=>{
+  const { empresa_id, ano, mes } = req.query;
+  if (!ano || !mes) return res.status(400).json({ error:'params' });
+
+  const { start, end } = toMonthRange(ano, mes);
+
+  const fetchTotals = (cb) => {
+    const empresaWhere = (empresa_id && empresa_id !== 'all') ? ' AND l.empresa_id=?' : '';
+    const params = [start, end];
+    if (empresaWhere) params.push(empresa_id);
+    db.get(
+      `SELECT
+        SUM(CASE WHEN l.tipo='RECEITA' THEN l.valor ELSE 0 END) as receitas,
+        SUM(CASE WHEN l.tipo='DESPESA' THEN l.valor ELSE 0 END) as despesas
+       FROM lancamentos l
+       WHERE l.data >= ? AND l.data < ? ${empresaWhere}`,
+      params,
+      (err,row)=>{
+        if (err) return cb(err);
+        cb(null, { receitas:Number(row?.receitas||0), despesas:Number(row?.despesas||0) });
+      }
+    );
+  };
+
+  const fetchByCategoria = (cb) => {
+    const empresaWhere = (empresa_id && empresa_id !== 'all') ? ' AND l.empresa_id=?' : '';
+    const params = [start, end];
+    if (empresaWhere) params.push(empresa_id);
+    db.all(
+      `SELECT l.tipo, COALESCE(c.nome,'(Sem categoria)') as categoria, SUM(l.valor) as total
+       FROM lancamentos l
+       LEFT JOIN categorias c ON c.id=l.categoria_id
+       WHERE l.data >= ? AND l.data < ? ${empresaWhere}
+       GROUP BY l.tipo, categoria
+       ORDER BY l.tipo, total DESC`,
+      params,
+      (err,rows)=>{
+        if (err) return cb(err);
+        cb(null, rows.map(r=>({ tipo:r.tipo, categoria:r.categoria, total:Number(r.total||0) })));
+      }
+    );
+  };
+
+  const fetchImpostos = (cb) => {
+    if (!empresa_id || empresa_id === 'all') {
+      // consolidado: soma por empresa
+      db.all('SELECT empresa_id,simples_percent,taxas_percent,outros_percent FROM impostos_config', [], (err,rows)=>{
+        if (err) return cb(err);
+        const map = new Map(rows.map(r=>[r.empresa_id, r]));
+        cb(null, { mode:'all', map });
+      });
+    } else {
+      db.get('SELECT simples_percent,taxas_percent,outros_percent FROM impostos_config WHERE empresa_id=?', [empresa_id], (err,row)=>{
+        if (err) return cb(err);
+        cb(null, { mode:'one', row: row || { simples_percent:0, taxas_percent:0, outros_percent:0 } });
+      });
+    }
+  };
+
+  const fetchEmpName = (cb) => {
+    if (!empresa_id || empresa_id === 'all') return cb(null, 'Consolidado (3 empresas)');
+    db.get('SELECT nome,cnpj FROM empresas WHERE id=?', [empresa_id], (err,row)=>{
+      if (err) return cb(err);
+      cb(null, row ? `${row.nome}${row.cnpj?` • ${row.cnpj}`:''}` : `Empresa ${empresa_id}`);
+    });
+  };
+
+  fetchTotals((e1,tot)=>{
+    if (e1) return res.status(500).json({ error:'db' });
+    fetchImpostos((e2,taxInfo)=>{
+      if (e2) return res.status(500).json({ error:'db' });
+      fetchEmpName((e3,empName)=>{
+        if (e3) return res.status(500).json({ error:'db' });
+        fetchByCategoria((e4,byCat)=>{
+          if (e4) return res.status(500).json({ error:'db' });
+
+          const receitas = tot.receitas;
+          const despesas = tot.despesas;
+          const resultado = receitas - despesas;
+
+          let impostoEstimado = 0;
+          if (!empresa_id || empresa_id === 'all') {
+            // para consolidado: estima imposto por empresa com base na receita por empresa
+            db.all(
+              `SELECT empresa_id, SUM(CASE WHEN tipo='RECEITA' THEN valor ELSE 0 END) as receitas
+               FROM lancamentos
+               WHERE data >= ? AND data < ?
+               GROUP BY empresa_id`,
+              [start, end],
+              (e5,rows)=>{
+                if (e5) return res.status(500).json({ error:'db' });
+                for (const r of rows) {
+                  const rec = Number(r.receitas||0);
+                  const t = taxInfo.map.get(r.empresa_id) || { simples_percent:0, taxas_percent:0, outros_percent:0 };
+                  const pct = (Number(t.simples_percent||0)+Number(t.taxas_percent||0)+Number(t.outros_percent||0))/100;
+                  impostoEstimado += rec * pct;
+                }
+                buildPdf(empName, receitas, despesas, resultado, impostoEstimado, byCat);
+              }
+            );
+          } else {
+            const t = taxInfo.row || { simples_percent:0, taxas_percent:0, outros_percent:0 };
+            const pct = (Number(t.simples_percent||0)+Number(t.taxas_percent||0)+Number(t.outros_percent||0))/100;
+            impostoEstimado = receitas * pct;
+            buildPdf(empName, receitas, despesas, resultado, impostoEstimado, byCat);
+          }
+
+          function buildPdf(empName, receitas, despesas, resultado, impostoEstimado, byCat){
+            const receitaLiquida = receitas - impostoEstimado;
+            const margem = receitas > 0 ? (resultado / receitas) : 0;
+            const health = healthIndicator(margem, resultado);
+
+            const doc = new PDFDocument({ margin: 42, size: 'A4' });
+            res.setHeader('Content-Type', 'application/pdf');
+            const safeName = `relatorio_${String(ano)}_${String(mes).padStart(2,'0')}.pdf`;
+            res.setHeader('Content-Disposition', `attachment; filename="${safeName}"`);
+            doc.pipe(res);
+
+            doc.fontSize(18).text('Relatório Financeiro Mensal', { align:'left' });
+            doc.moveDown(0.3);
+            doc.fontSize(11).fillColor('#333333')
+              .text(`Empresa: ${empName}`)
+              .text(`Período: ${String(mes).padStart(2,'0')}/${ano}`)
+              .text(`Gerado em: ${new Date().toLocaleString('pt-BR')}`);
+            doc.moveDown(0.8);
+
+            doc.fillColor('#000000').fontSize(13).text('Resumo', { underline: true });
+            doc.moveDown(0.3);
+            doc.fontSize(11);
+            doc.text(`Receita bruta: R$ ${receitas.toFixed(2)}`);
+            doc.text(`Impostos estimados: R$ ${impostoEstimado.toFixed(2)}`);
+            doc.text(`Receita líquida (estimada): R$ ${receitaLiquida.toFixed(2)}`);
+            doc.text(`Despesas: R$ ${despesas.toFixed(2)}`);
+            doc.text(`Resultado: R$ ${resultado.toFixed(2)}`);
+            doc.text(`Margem: ${(margem*100).toFixed(1)}%`);
+            doc.text(`Indicador: ${health.cor.toUpperCase()} • ${health.texto}`);
+            doc.moveDown(0.8);
+
+            doc.fontSize(13).text('Por categoria (top)', { underline: true });
+            doc.moveDown(0.3);
+            doc.fontSize(10);
+
+            const topRows = byCat.slice(0, 18);
+            for (const r of topRows) {
+              doc.text(`${r.tipo.padEnd(7)}  ${r.categoria}: R$ ${Number(r.total||0).toFixed(2)}`);
+            }
+            if (byCat.length > topRows.length) doc.text(`... (+${byCat.length-topRows.length} categorias)`);
+
+            doc.moveDown(1.0);
+            doc.fontSize(9).fillColor('#555555')
+              .text('Obs: Impostos são estimativas com base nas % cadastradas. Para valor exato, use a apuração contábil.', { align:'left' });
+
+            doc.end();
+          }
+        });
+      });
+    });
+  });
+});
+
 
 const PORT = process.env.PORT || 3000;
 app.listen(PORT, ()=> console.log('Financeiro rodando na porta', PORT));
