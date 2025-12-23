@@ -33,18 +33,19 @@
       <div class="card"><h3>Projeção resultado (próx. mês)</h3><div class="val" id="pResultado">R$ 0,00</div></div>
     </div>
 
-    <div class="card" style="margin-top:14px;">
-      <h3 style="margin:0 0 8px 0;">🧠 Leitura rápida</h3>
-      <div id="texto" class="small">—</div>
-    
-    <div class="card" style="margin-top:14px;">
-      <h3 style="margin:0 0 8px 0;">📈 Evolução (últimos meses)</h3>
-      <div class="small" style="margin-bottom:8px;">Receita, despesas e resultado (baseado na série usada na projeção).</div>
-      <canvas id="evolucao" width="1000" height="260" style="width:100%; height:260px; background:#ffffff10; border-radius:12px;"></canvas>
-      <div class="small" id="evoLegenda" style="margin-top:8px;">Linhas: Receita / Despesas / Resultado</div>
-    </div>
-</div>
-  </div>
+
+	    <div class="card" style="margin-top:14px;">
+	      <h3 style="margin:0 0 8px 0;">🧠 Leitura rápida</h3>
+	      <div id="texto" class="small">—</div>
+	    </div>
+	
+	    <div class="card" style="margin-top:14px;">
+	      <h3 style="margin:0 0 8px 0;">📈 Evolução (últimos meses)</h3>
+	      <div class="small" style="margin-bottom:8px;">Receita, despesas e resultado (baseado na série usada na projeção).</div>
+	      <canvas id="evolucao" width="1000" height="260" style="width:100%; height:260px; background:#ffffff10; border-radius:12px;"></canvas>
+	      <div class="small" id="evoLegenda" style="margin-top:8px;">Linhas: Receita / Despesas / Resultado</div>
+	    </div>
+	  </div>
 
 <script>
 function money(v){ return 'R$ ' + Number(v||0).toFixed(2); }
@@ -217,6 +218,9 @@ async function carregar(){
     }
   }
   document.getElementById('texto').textContent = texto;
+
+  // Atualiza projeções e o gráfico de evolução (usa a mesma empresa/mês/ano selecionados)
+  await carregarProjecao();
 }
 
 initFiltros();
