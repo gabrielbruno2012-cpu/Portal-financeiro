@@ -14,3 +14,9 @@ function logout(){ localStorage.removeItem('fin_user'); location.href='/finance/
   try{ const user = u? JSON.parse(u): null; const el = document.getElementById('who'); if(el) el.textContent = user?.email || ''; }catch(e){}
 })();
 </script>
+
+<li><a href="/finance/dre.html">📑 DRE Mensal</a></li>
+
+<li><a href="/finance/categorias.html">🏷️ Categorias</a></li>
+
+<li><a href="/finance/recorrencias.html">🔁 Recorrências</a></li>

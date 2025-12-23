@@ -347,6 +347,178 @@ app.get('/api/fin/dashboard', (req,res)=>{
 });
 
 
+
+// ============================
+//     DRE MENSAL
+// ============================
+function calcImposto(empresa_id, receita, cb){
+  db.get(`SELECT simples_percent,taxas_percent,outros_percent FROM impostos_config WHERE empresa_id=?`, [empresa_id], (err,row)=>{
+    if (err) return cb(err, 0);
+    const p = row ? (Number(row.simples_percent||0) + Number(row.taxas_percent||0) + Number(row.outros_percent||0)) : 0;
+    cb(null, receita * (p/100));
+  });
+}
+
+function dreEmpresa(empresa_id, ano, mes, cb){
+  // garante recorrências do mês antes de calcular
+  ensureRecorrenciasGeradas(String(empresa_id), String(ano), String(mes), (eGen)=>{
+    if (eGen) return cb(eGen);
+
+    const start = `${ano}-${String(mes).padStart(2,'0')}-01`;
+    const end = `${ano}-${String(mes).padStart(2,'0')}-${String(lastDayOfMonth(ano, mes)).padStart(2,'0')}`;
+
+    // receitas
+    db.get(
+      `SELECT COALESCE(SUM(valor),0) as total
+       FROM lancamentos
+       WHERE empresa_id=? AND tipo='RECEITA' AND date(data) BETWEEN date(?) AND date(?)`,
+      [empresa_id, start, end],
+      (err, rRec)=>{
+        if (err) return cb(err);
+        const receita = Number(rRec.total||0);
+
+        // custos e despesas por grupo via categoria
+        db.all(
+          `SELECT COALESCE(c.grupo,'despesa') as grupo, COALESCE(c.nome,'(Sem categoria)') as categoria, COALESCE(SUM(l.valor),0) as total
+           FROM lancamentos l
+           LEFT JOIN categorias c ON c.id=l.categoria_id
+           WHERE l.empresa_id=? AND l.tipo='DESPESA' AND date(l.data) BETWEEN date(?) AND date(?)
+           GROUP BY COALESCE(c.grupo,'despesa'), COALESCE(c.nome,'(Sem categoria)')
+           ORDER BY grupo, total DESC`,
+          [empresa_id, start, end],
+          (err2, rows)=>{
+            if (err2) return cb(err2);
+
+            let custos = 0, despesas = 0;
+            const porCategoria = { custo: [], despesa: [], receita: [] };
+
+            rows.forEach(r=>{
+              const g = String(r.grupo||'despesa').toLowerCase();
+              const v = Number(r.total||0);
+              if (g === 'custo') custos += v;
+              else despesas += v;
+              porCategoria[g === 'custo' ? 'custo' : 'despesa'].push({ categoria: r.categoria, total: v });
+            });
+
+            // receitas por categoria (opcional)
+            db.all(
+              `SELECT COALESCE(c.nome,'(Sem categoria)') as categoria, COALESCE(SUM(l.valor),0) as total
+               FROM lancamentos l
+               LEFT JOIN categorias c ON c.id=l.categoria_id
+               WHERE l.empresa_id=? AND l.tipo='RECEITA' AND date(l.data) BETWEEN date(?) AND date(?)
+               GROUP BY COALESCE(c.nome,'(Sem categoria)')
+               ORDER BY total DESC`,
+              [empresa_id, start, end],
+              (err3, rRows)=>{
+                if (err3) return cb(err3);
+                porCategoria.receita = rRows.map(x=>({ categoria: x.categoria, total: Number(x.total||0) }));
+
+                calcImposto(empresa_id, receita, (eImp, imposto)=>{
+                  if (eImp) return cb(eImp);
+
+                  const lucroBruto = receita - custos;
+                  const resultadoOper = lucroBruto - despesas;
+                  const lucroLiquido = resultadoOper - imposto;
+
+                  const out = {
+                    empresa_id: Number(empresa_id),
+                    receita_bruta: receita,
+                    custos,
+                    despesas,
+                    lucro_bruto: lucroBruto,
+                    resultado_operacional: resultadoOper,
+                    imposto_estimado: imposto,
+                    lucro_liquido_estimado: lucroLiquido,
+                    margem_bruta: receita>0 ? (lucroBruto/receita) : 0,
+                    margem_liquida: receita>0 ? (lucroLiquido/receita) : 0,
+                    por_categoria: porCategoria
+                  };
+                  cb(null, out);
+                });
+              }
+            );
+          }
+        );
+      }
+    );
+  });
+}
+
+app.get('/api/fin/dre', (req,res)=>{
+  const { empresa_id, ano, mes } = req.query;
+  if (!ano || !mes || !empresa_id) return res.status(400).json({ error:'params' });
+
+  // helper para mês anterior
+  function prevMonth(a, m){
+    let yy = Number(a), mm = Number(m);
+    mm -= 1;
+    if (mm<=0){ mm = 12; yy -= 1; }
+    return { ano: yy, mes: mm };
+  }
+
+  if (empresa_id === 'all'){
+    // consolidado: soma empresas ativas
+    db.all("SELECT id,nome FROM empresas WHERE ativo=1 ORDER BY id", [], (err, emps)=>{
+      if (err) return res.status(500).json({ error:'db' });
+      const results = [];
+      let pending = emps.length;
+      if (!pending) return res.json({ empresa_id:'all', ano, mes, dre:null });
+
+      emps.forEach(e=>{
+        dreEmpresa(e.id, ano, mes, (eD, dre)=>{
+          if (!eD && dre) dre.nome = e.nome;
+          results.push(dre);
+          pending -= 1;
+          if (pending===0){
+            // soma
+            const sum = (k)=> results.reduce((acc,x)=>acc + Number((x&&x[k])||0), 0);
+            const receita = sum('receita_bruta');
+            const custos = sum('custos');
+            const despesas = sum('despesas');
+            const imposto = sum('imposto_estimado');
+            const lucroBruto = receita - custos;
+            const resultadoOper = lucroBruto - despesas;
+            const lucroLiquido = resultadoOper - imposto;
+
+            res.json({
+              empresa_id:'all',
+              ano, mes,
+              dre: {
+                receita_bruta: receita,
+                custos, despesas,
+                lucro_bruto: lucroBruto,
+                resultado_operacional: resultadoOper,
+                imposto_estimado: imposto,
+                lucro_liquido_estimado: lucroLiquido,
+                margem_bruta: receita>0 ? (lucroBruto/receita) : 0,
+                margem_liquida: receita>0 ? (lucroLiquido/receita) : 0
+              },
+              por_empresa: results
+            });
+          }
+        });
+      });
+    });
+  } else {
+    const pid = prevMonth(ano, mes);
+    dreEmpresa(empresa_id, ano, mes, (err, dre)=>{
+      if (err) return res.status(500).json({ error:'db' });
+      dreEmpresa(empresa_id, pid.ano, pid.mes, (err2, drePrev)=>{
+        // se falhar mês anterior, ignora
+        const prev = err2 ? null : drePrev;
+        const comp = prev ? {
+          receita_bruta: dre.receita_bruta - prev.receita_bruta,
+          custos: dre.custos - prev.custos,
+          despesas: dre.despesas - prev.despesas,
+          lucro_liquido_estimado: dre.lucro_liquido_estimado - prev.lucro_liquido_estimado
+        } : null;
+        res.json({ empresa_id, ano, mes, dre, anterior: prev, variacao: comp });
+      });
+    });
+  }
+});
+
+
 // Relatório PDF mensal (server-side)
 app.get('/api/fin/relatorio/pdf', (req,res)=>{
   const { empresa_id, ano, mes } = req.query;
