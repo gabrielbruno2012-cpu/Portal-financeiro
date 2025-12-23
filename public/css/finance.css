@@ -23,3 +23,9 @@ tr:nth-child(even){background:#ffffff10;}
 .sidebar a:hover{background:#ffffff12;}
 .main{margin-left:220px;padding:18px 22px;}
 .small{font-size:12px;opacity:.8;}
+canvas {
+  display: block;
+  width: 100%;
+  height: 260px;
+}
+
