@@ -1,0 +1,15 @@
+<div class="sidebar">
+  <div class="logo">💼 Financeiro</div>
+  <a href="/finance/dashboard.html">📊 Dashboard</a>
+  <a href="/finance/lancamentos.html">🧾 Lançamentos</a>
+  <a href="/finance/impostos.html">🧾 Impostos</a>
+  <a href="#" onclick="logout()">🚪 Sair</a>
+  <div class="small" style="margin-top:12px;">Login: <span id="who"></span></div>
+</div>
+<script>
+function logout(){ localStorage.removeItem('fin_user'); location.href='/finance/login.html'; }
+(function(){
+  const u = localStorage.getItem('fin_user');
+  try{ const user = u? JSON.parse(u): null; const el = document.getElementById('who'); if(el) el.textContent = user?.email || ''; }catch(e){}
+})();
+</script>

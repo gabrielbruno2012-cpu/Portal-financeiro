@@ -1,0 +1,107 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+  <meta charset="utf-8"/>
+  <meta name="viewport" content="width=device-width, initial-scale=1"/>
+  <title>Dashboard Financeiro</title>
+  <link rel="stylesheet" href="/css/finance.css"/>
+</head>
+<body>
+  <div id="sb"></div>
+  <div class="main">
+    <h2 style="margin:0 0 6px 0;">📊 Dashboard</h2>
+    <div class="small" style="margin-bottom:12px;">Filtre por empresa e mês para analisar a saúde financeira.</div>
+
+    <div class="top">
+      <select id="empresa" class="input"></select>
+      <select id="mes" class="input"></select>
+      <select id="ano" class="input"></select>
+      <button class="btn" onclick="carregar()">Atualizar</button>
+      <span id="health" class="badge verde" style="margin-left:auto;">—</span>
+    </div>
+
+    <div class="card-grid" style="margin-top:12px;">
+      <div class="card"><h3>Receita bruta</h3><div class="val" id="cReceitas">R$ 0,00</div></div>
+      <div class="card"><h3>Impostos estimados</h3><div class="val" id="cImpostos">R$ 0,00</div></div>
+      <div class="card"><h3>Receita líquida</h3><div class="val" id="cLiquida">R$ 0,00</div></div>
+      <div class="card"><h3>Despesas</h3><div class="val" id="cDespesas">R$ 0,00</div></div>
+      <div class="card"><h3>Resultado</h3><div class="val" id="cResultado">R$ 0,00</div></div>
+      <div class="card"><h3>Margem</h3><div class="val" id="cMargem">0%</div></div>
+    </div>
+
+    <div class="card" style="margin-top:14px;">
+      <h3 style="margin:0 0 8px 0;">🧠 Leitura rápida</h3>
+      <div id="texto" class="small">—</div>
+    </div>
+  </div>
+
+<script>
+function money(v){ return 'R$ ' + Number(v||0).toFixed(2); }
+function pct(v){ return (Number(v||0)*100).toFixed(1) + '%'; }
+(function mustLogin(){
+  const u = localStorage.getItem('fin_user');
+  if(!u){ location.href='/finance/login.html'; }
+})();
+fetch('/components/sidebar_finance.html').then(r=>r.text()).then(html=>document.getElementById('sb').innerHTML = html);
+
+const empresaSel = document.getElementById('empresa');
+const mesSel = document.getElementById('mes');
+const anoSel = document.getElementById('ano');
+
+function initFiltros(){
+  const meses = ["01 - Jan","02 - Fev","03 - Mar","04 - Abr","05 - Mai","06 - Jun","07 - Jul","08 - Ago","09 - Set","10 - Out","11 - Nov","12 - Dez"];
+  const now = new Date();
+  mesSel.innerHTML = meses.map((m,i)=>`<option value="${String(i+1).padStart(2,'0')}" ${i===now.getMonth()?'selected':''}>${m}</option>`).join('');
+  const y = now.getFullYear();
+  let years = '';
+  for(let a=y-2;a<=y+1;a++) years += `<option value="${a}" ${a===y?'selected':''}>${a}</option>`;
+  anoSel.innerHTML = years;
+}
+
+async function carregarEmpresas(){
+  const r = await fetch('/api/fin/empresas');
+  const rows = await r.json();
+  empresaSel.innerHTML = `<option value="all">Consolidado (3 empresas)</option>` + rows.map(e=>`<option value="${e.id}">${e.nome}</option>`).join('');
+}
+
+async function carregar(){
+  const empresa_id = empresaSel.value;
+  const mes = mesSel.value;
+  const ano = anoSel.value;
+
+  const r = await fetch(`/api/fin/dashboard?empresa_id=${encodeURIComponent(empresa_id)}&mes=${mes}&ano=${ano}`);
+  const d = await r.json();
+
+  document.getElementById('cReceitas').textContent = money(d.receitas);
+  document.getElementById('cImpostos').textContent = money(d.impostoEstimado);
+  document.getElementById('cLiquida').textContent = money(d.receitaLiquida);
+  document.getElementById('cDespesas').textContent = money(d.despesas);
+  document.getElementById('cResultado').textContent = money(d.resultado);
+  document.getElementById('cMargem').textContent = pct(d.margem);
+
+  const h = document.getElementById('health');
+  h.classList.remove('verde','amarelo','vermelho');
+  h.classList.add(d.health?.cor || 'verde');
+  h.textContent = (d.health?.cor || '—').toUpperCase() + ' • ' + (d.health?.texto || '');
+
+  let texto = '';
+  if(d.receitas <= 0){
+    texto = 'Sem receitas no período. Lance suas receitas e despesas para avaliar a saúde financeira.';
+  }else{
+    const margem = d.margem || 0;
+    if(d.resultado < 0){
+      texto = `Você teve prejuízo no período. Receita bruta ${money(d.receitas)} vs despesas ${money(d.despesas)}.`;
+    }else if(margem >= 0.15){
+      texto = `Saudável no período. Margem em ${pct(margem)} com resultado ${money(d.resultado)}.`;
+    }else{
+      texto = `Resultado positivo, mas a margem está apertada (${pct(margem)}). Impostos estimados: ${money(d.impostoEstimado)}.`;
+    }
+  }
+  document.getElementById('texto').textContent = texto;
+}
+
+initFiltros();
+carregarEmpresas().then(carregar);
+</script>
+</body>
+</html>

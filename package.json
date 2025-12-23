@@ -1,0 +1,14 @@
+{
+  "name": "coelholog-financeiro",
+  "version": "1.0.0",
+  "main": "backend/server_financeiro.js",
+  "type": "commonjs",
+  "scripts": {
+    "start": "node backend/server_financeiro.js"
+  },
+  "dependencies": {
+    "express": "^4.19.2",
+    "sqlite3": "^5.1.7",
+    "body-parser": "^1.20.2"
+  }
+}
