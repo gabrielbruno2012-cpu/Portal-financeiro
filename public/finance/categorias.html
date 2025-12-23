@@ -1,0 +1,189 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Categorias (DRE)</title>
+  <link rel="stylesheet" href="/css/style.css" />
+</head>
+<body>
+  <div class="layout">
+    <div id="sidebar"></div>
+    <div class="content">
+      <div class="top">
+        <h2 style="margin:0">Categorias (DRE)</h2>
+        <button class="btn" onclick="logout()">Sair</button>
+      </div>
+
+      
+<div class="card">
+  <div class="row" style="gap:10px; flex-wrap:wrap;">
+    <div>
+      <div class="small">Empresa</div>
+      <select id="empresa" class="input"></select>
+    </div>
+    <div>
+      <div class="small">Tipo</div>
+      <select id="tipoFiltro" class="input">
+        <option value="">Todos</option>
+        <option value="RECEITA">Receitas</option>
+        <option value="DESPESA">Despesas</option>
+      </select>
+    </div>
+    <button class="btn" onclick="carregar()">Atualizar</button>
+  </div>
+  <div id="msg" class="small" style="margin-top:10px;"></div>
+</div>
+
+<div class="card" style="margin-top:12px;">
+  <h3 style="margin:0 0 10px 0;">➕ Nova categoria</h3>
+  <div class="row" style="gap:10px; flex-wrap:wrap;">
+    <input id="nome" class="input" placeholder="Nome da categoria" style="flex:2; min-width:220px;">
+    <select id="tipo" class="input" style="min-width:180px;">
+      <option value="RECEITA">Receita</option>
+      <option value="DESPESA">Despesa</option>
+    </select>
+    <select id="grupo" class="input" style="min-width:180px;">
+      <option value="receita">Grupo (receita)</option>
+      <option value="custo">Custo (operação)</option>
+      <option value="despesa">Despesa (adm)</option>
+    </select>
+    <button class="btn" onclick="criar()">Adicionar</button>
+  </div>
+  <div class="small" style="margin-top:8px;">No DRE: <b>custo</b> entra antes do lucro bruto. <b>despesa</b> vem depois.</div>
+</div>
+
+<div class="card" style="margin-top:12px;">
+  <h3 style="margin:0 0 10px 0;">Lista</h3>
+  <div style="overflow:auto;">
+    <table class="table">
+      <thead>
+        <tr>
+          <th>Nome</th>
+          <th>Tipo</th>
+          <th>Grupo DRE</th>
+          <th>Ativo</th>
+          <th style="width:220px;">Ações</th>
+        </tr>
+      </thead>
+      <tbody id="tbody"></tbody>
+    </table>
+  </div>
+</div>
+
+    </div>
+  </div>
+
+<script>
+async function loadSidebar(){
+  const r = await fetch('/components/sidebar_finance.html');
+  document.getElementById('sidebar').innerHTML = await r.text();
+}
+function getUser(){
+  try{ return JSON.parse(localStorage.getItem('usuario_fin')||'null'); }catch(e){ return null; }
+}
+function logout(){
+  localStorage.removeItem('usuario_fin');
+  location.href='/finance/login.html';
+}
+function fmtMoney(v){ return 'R$ ' + (Number(v||0)).toFixed(2).replace('.',','); }
+
+const user = getUser();
+if(!user){ location.href='/finance/login.html'; }
+
+async function carregarEmpresas(){
+  const r = await fetch('/api/fin/empresas');
+  const emps = await r.json();
+  const sel = document.getElementById('empresa');
+  sel.innerHTML = '<option value="all">Consolidado (3 empresas)</option>' + emps.map(e=>`<option value="${e.id}">${e.nome}</option>`).join('');
+}
+
+function syncGrupo(){
+  const t = document.getElementById('tipo').value;
+  const g = document.getElementById('grupo');
+  if(t==='RECEITA'){
+    g.value='receita';
+    g.disabled=true;
+  }else{
+    g.disabled=false;
+    if(g.value==='receita') g.value='despesa';
+  }
+}
+document.addEventListener('change', (ev)=>{
+  if(ev.target && ev.target.id==='tipo') syncGrupo();
+});
+
+async function carregar(){
+  const empresa_id = document.getElementById('empresa').value;
+  const tipo = document.getElementById('tipoFiltro').value;
+  const qs = new URLSearchParams({ empresa_id, ...(tipo?{tipo}:{}) });
+  const r = await fetch('/api/fin/categorias?'+qs.toString());
+  const rows = await r.json();
+  const tb = document.getElementById('tbody');
+  tb.innerHTML = rows.map(c=>`
+    <tr>
+      <td><input class="input" value="${(c.nome||'').replaceAll('"','&quot;')}" id="n_${c.id}"></td>
+      <td>
+        <select class="input" id="t_${c.id}">
+          <option value="RECEITA" ${c.tipo==='RECEITA'?'selected':''}>RECEITA</option>
+          <option value="DESPESA" ${c.tipo==='DESPESA'?'selected':''}>DESPESA</option>
+        </select>
+      </td>
+      <td>
+        <select class="input" id="g_${c.id}" ${c.tipo==='RECEITA'?'disabled':''}>
+          <option value="receita" ${c.grupo==='receita'?'selected':''}>receita</option>
+          <option value="custo" ${c.grupo==='custo'?'selected':''}>custo</option>
+          <option value="despesa" ${c.grupo==='despesa'?'selected':''}>despesa</option>
+        </select>
+      </td>
+      <td>
+        <select class="input" id="a_${c.id}">
+          <option value="1" ${Number(c.ativo||1)===1?'selected':''}>Sim</option>
+          <option value="0" ${Number(c.ativo||1)===0?'selected':''}>Não</option>
+        </select>
+      </td>
+      <td>
+        <button class="btn" onclick="salvar(${c.id})">Salvar</button>
+        <button class="btn danger" onclick="del(${c.id})">Excluir</button>
+      </td>
+    </tr>
+  `).join('');
+  document.getElementById('msg').textContent = '';
+}
+
+async function criar(){
+  const empresa_id = document.getElementById('empresa').value;
+  if(empresa_id==='all'){ alert('Selecione uma empresa para cadastrar categorias (não no consolidado).'); return; }
+  const nome = document.getElementById('nome').value.trim();
+  const tipo = document.getElementById('tipo').value;
+  const grupo = document.getElementById('grupo').value;
+  if(!nome){ alert('Informe o nome'); return; }
+  const r = await fetch('/api/fin/categorias',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({empresa_id, nome, tipo, grupo})});
+  if(!r.ok){ alert('Erro ao criar'); return; }
+  document.getElementById('nome').value='';
+  await carregar();
+}
+
+async function salvar(id){
+  const nome = document.getElementById('n_'+id).value.trim();
+  const tipo = document.getElementById('t_'+id).value;
+  const grupo = document.getElementById('g_'+id).value;
+  const ativo = document.getElementById('a_'+id).value;
+  const r = await fetch('/api/fin/categorias/'+id,{method:'PUT',headers:{'Content-Type':'application/json'},body:JSON.stringify({nome,tipo,grupo,ativo})});
+  if(!r.ok){ alert('Erro ao salvar'); return; }
+  await carregar();
+}
+
+async function del(id){
+  if(!confirm('Excluir categoria?')) return;
+  const r = await fetch('/api/fin/categorias/'+id,{method:'DELETE'});
+  if(!r.ok){ alert('Erro ao excluir'); return; }
+  await carregar();
+}
+
+carregarEmpresas().then(()=>{ syncGrupo(); carregar(); });
+
+loadSidebar();
+</script>
+</body>
+</html>
