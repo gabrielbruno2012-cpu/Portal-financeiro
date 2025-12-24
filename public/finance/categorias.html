@@ -80,10 +80,11 @@ async function loadSidebar(){
   document.getElementById('sidebar').innerHTML = await r.text();
 }
 function getUser(){
-  try{ return JSON.parse(localStorage.getItem('usuario_fin')||'null'); }catch(e){ return null; }
+  // Mesma chave usada no login/dashboard do sistema financeiro
+  try{ return JSON.parse(localStorage.getItem('fin_user')||'null'); }catch(e){ return null; }
 }
 function logout(){
-  localStorage.removeItem('usuario_fin');
+  localStorage.removeItem('fin_user');
   location.href='/finance/login.html';
 }
 function fmtMoney(v){ return 'R$ ' + (Number(v||0)).toFixed(2).replace('.',','); }
