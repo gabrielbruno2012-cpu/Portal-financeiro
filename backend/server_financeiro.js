@@ -134,10 +134,122 @@ app.get('/api/fin/categorias', (req,res)=>{
   const tipo = req.query.tipo;
   if (!empresa_id || !tipo) return res.status(400).json({ error:'params' });
   db.all('SELECT id,empresa_id,tipo,nome FROM categorias WHERE empresa_id=? AND tipo=? ORDER BY nome',
-    [empresa_id, tipo], (err,rows)=>{
+    [empresa_id, tipo || null, tipo || null], (err,rows)=>{
       if (err) return res.status(500).json({ error:'db' });
       res.json(rows);
     });
+});
+
+// Criar categoria
+app.post("/api/fin/categorias", (req, res) => {
+  const { empresa_id, tipo, nome } = req.body || {};
+  if (!empresa_id || !tipo || !nome) return res.status(400).json({ error: "empresa_id, tipo e nome são obrigatórios" });
+  db.run(
+    `INSERT INTO categorias (empresa_id, tipo, nome, ativo) VALUES (?,?,?,1)`,
+    [empresa_id, String(tipo), String(nome).trim()],
+    function (err) {
+      if (err) return res.status(500).json({ error: "Erro ao criar categoria" });
+      res.json({ ok: true, id: this.lastID });
+    }
+  );
+});
+
+// Editar categoria
+app.put("/api/fin/categorias/:id", (req, res) => {
+  const { id } = req.params;
+  const { tipo, nome, ativo } = req.body || {};
+  db.run(
+    `UPDATE categorias SET tipo = COALESCE(?, tipo), nome = COALESCE(?, nome), ativo = COALESCE(?, ativo) WHERE id = ?`,
+    [tipo ?? null, nome ? String(nome).trim() : null, typeof ativo === "number" ? ativo : (ativo === undefined ? null : (ativo ? 1 : 0)), id],
+    function (err) {
+      if (err) return res.status(500).json({ error: "Erro ao editar categoria" });
+      res.json({ ok: true, changes: this.changes });
+    }
+  );
+});
+
+// "Excluir" categoria (desativa)
+app.delete("/api/fin/categorias/:id", (req, res) => {
+  const { id } = req.params;
+  db.run(`UPDATE categorias SET ativo = 0 WHERE id = ?`, [id], function (err) {
+    if (err) return res.status(500).json({ error: "Erro ao remover categoria" });
+    res.json({ ok: true, changes: this.changes });
+  });
+});
+
+// Listar recorrências
+app.get("/api/fin/recorrencias", (req, res) => {
+  const { empresa_id } = req.query;
+  if (!empresa_id) return res.status(400).json({ error: "empresa_id obrigatório" });
+  db.all(
+    `SELECT r.*, c.nome AS categoria_nome
+       FROM recorrencias r
+       LEFT JOIN categorias c ON c.id = r.categoria_id
+      WHERE r.empresa_id = ? AND r.ativo = 1
+      ORDER BY r.tipo, r.dia, r.id DESC`,
+    [empresa_id],
+    (err, rows) => {
+      if (err) return res.status(500).json({ error: "Erro ao listar recorrências" });
+      res.json(rows || []);
+    }
+  );
+});
+
+// Criar recorrência
+app.post("/api/fin/recorrencias", (req, res) => {
+  const { empresa_id, tipo, categoria_id, descricao, valor, dia, ativo } = req.body || {};
+  if (!empresa_id || !tipo || !descricao || valor === undefined || valor === null) {
+    return res.status(400).json({ error: "empresa_id, tipo, descricao e valor são obrigatórios" });
+  }
+  const diaNum = Math.max(1, Math.min(31, Number(dia || 1)));
+  db.run(
+    `INSERT INTO recorrencias (empresa_id, tipo, categoria_id, descricao, valor, dia, ativo)
+     VALUES (?,?,?,?,?,?,?)`,
+    [empresa_id, String(tipo), categoria_id || null, String(descricao).trim(), Number(valor), diaNum, (ativo === 0 || ativo === false) ? 0 : 1],
+    function (err) {
+      if (err) return res.status(500).json({ error: "Erro ao criar recorrência" });
+      res.json({ ok: true, id: this.lastID });
+    }
+  );
+});
+
+// Editar recorrência
+app.put("/api/fin/recorrencias/:id", (req, res) => {
+  const { id } = req.params;
+  const { tipo, categoria_id, descricao, valor, dia, ativo } = req.body || {};
+  const diaNum = dia === undefined ? null : Math.max(1, Math.min(31, Number(dia || 1)));
+  db.run(
+    `UPDATE recorrencias
+        SET tipo = COALESCE(?, tipo),
+            categoria_id = COALESCE(?, categoria_id),
+            descricao = COALESCE(?, descricao),
+            valor = COALESCE(?, valor),
+            dia = COALESCE(?, dia),
+            ativo = COALESCE(?, ativo)
+      WHERE id = ?`,
+    [
+      tipo ?? null,
+      categoria_id === undefined ? null : (categoria_id || null),
+      descricao ? String(descricao).trim() : null,
+      (valor === undefined ? null : Number(valor)),
+      diaNum,
+      (ativo === undefined ? null : (ativo ? 1 : 0)),
+      id
+    ],
+    function (err) {
+      if (err) return res.status(500).json({ error: "Erro ao editar recorrência" });
+      res.json({ ok: true, changes: this.changes });
+    }
+  );
+});
+
+// "Excluir" recorrência (desativa)
+app.delete("/api/fin/recorrencias/:id", (req, res) => {
+  const { id } = req.params;
+  db.run(`UPDATE recorrencias SET ativo = 0 WHERE id = ?`, [id], function (err) {
+    if (err) return res.status(500).json({ error: "Erro ao remover recorrência" });
+    res.json({ ok: true, changes: this.changes });
+  });
 });
 
 app.get('/api/fin/lancamentos', (req,res)=>{
@@ -357,6 +469,71 @@ function calcImposto(empresa_id, receita, cb){
     const p = row ? (Number(row.simples_percent||0) + Number(row.taxas_percent||0) + Number(row.outros_percent||0)) : 0;
     cb(null, receita * (p/100));
   });
+}
+
+// Gera lançamentos "Previsto" a partir de recorrências (se ainda não existir no mês)
+function ensureRecorrenciasGeradas(empresa_id, ano, mes, cb) {
+  const mesNum = String(mes).padStart(2, "0");
+  const ym = `${ano}-${mesNum}`;
+
+  db.all(
+    `SELECT * FROM recorrencias WHERE empresa_id = ? AND ativo = 1`,
+    [empresa_id],
+    (err, recs) => {
+      if (err) return cb(err);
+      if (!recs || recs.length === 0) return cb(null, { generated: 0 });
+
+      let pending = recs.length;
+      let generated = 0;
+
+      const done = (e) => {
+        if (e) {
+          pending = -999;
+          return cb(e);
+        }
+        pending--;
+        if (pending === 0) cb(null, { generated });
+      };
+
+      recs.forEach((r) => {
+        const maxDia = new Date(Number(ano), Number(mesNum), 0).getDate();
+        const dia = Math.min(Math.max(1, Number(r.dia || 1)), maxDia);
+        const data = `${ym}-${String(dia).padStart(2, "0")}`;
+
+        db.get(
+          `SELECT id FROM lancamentos
+            WHERE empresa_id = ? AND recorrencia_id = ? AND substr(data,1,7) = ?
+            LIMIT 1`,
+          [empresa_id, r.id, ym],
+          (e2, row) => {
+            if (e2) return done(e2);
+            if (row) return done();
+
+            db.run(
+              `INSERT INTO lancamentos
+                (empresa_id, tipo, categoria_id, descricao, valor, data, status, origem, recorrencia_id)
+               VALUES (?,?,?,?,?,?,?,? ,?)`,
+              [
+                empresa_id,
+                r.tipo,
+                r.categoria_id || null,
+                r.descricao,
+                Number(r.valor || 0),
+                data,
+                "Previsto",
+                "recorrencia",
+                r.id,
+              ],
+              (e3) => {
+                if (!e3) generated++;
+                return done(e3);
+              }
+            );
+          }
+        );
+      });
+    }
+  );
 }
 
 function dreEmpresa(empresa_id, ano, mes, cb){
