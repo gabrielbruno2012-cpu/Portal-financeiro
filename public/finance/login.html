@@ -1,0 +1,129 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Login - CoelhoLog Financeiro</title>
+  <link rel="stylesheet" href="/css/finance.css" />
+  <style>
+    body{
+      min-height:100vh;
+      display:flex;
+      align-items:center;
+      justify-content:center;
+      padding:28px;
+      background: radial-gradient(1200px 700px at 50% 0%, rgba(255,255,255,0.08), rgba(255,255,255,0.00) 60%), #062447;
+      color:#fff;
+      overflow:hidden;
+    }
+    .login-wrap{width:100%;max-width:920px;text-align:center;}
+    .brand{
+      font-size:56px;
+      font-weight:900;
+      letter-spacing:-0.02em;
+      line-height:1;
+      margin:0 0 18px;
+    }
+    .brand .log{color:#f7c600;}
+    .brand-sub{margin:0 0 24px;opacity:.85;font-size:13px;letter-spacing:.08em;text-transform:uppercase;}
+    .card{
+      margin:0 auto;
+      background:#ffffff;
+      border-radius:14px;
+      max-width:760px;
+      padding:26px 26px 22px;
+      box-shadow: 0 16px 50px rgba(0,0,0,.35);
+      color:#0b1f3a;
+      text-align:left;
+    }
+    .card h1{margin:0 0 6px;font-size:28px;text-align:center;color:#0b1f3a;}
+    .card p{margin:0 0 18px;text-align:center;color:#5d6b7e;font-size:13px;}
+    .grid{display:grid;grid-template-columns:1fr;gap:12px;}
+    label{font-weight:700;color:#0b1f3a;font-size:13px;}
+    input{
+      width:100%;
+      padding:12px 14px;
+      border-radius:10px;
+      border:1px solid #d7dee9;
+      background:#eef4ff;
+      outline:none;
+      font-size:14px;
+      box-sizing:border-box;
+    }
+    input:focus{border-color:#2a66c5;box-shadow:0 0 0 3px rgba(42,102,197,.15);}
+    .btn{
+      margin-top:8px;
+      width:100%;
+      padding:14px 16px;
+      border:none;
+      border-radius:10px;
+      background:#f7c600;
+      font-weight:900;
+      cursor:pointer;
+      font-size:16px;
+    }
+    .msg{margin-top:10px;text-align:center;font-size:12px;min-height:16px;}
+    .msg.err{color:#c1121f;}
+    .footer{margin-top:16px;text-align:center;opacity:.8;font-size:12px;}
+  </style>
+</head>
+<body>
+  <div class="login-wrap">
+    <div class="brand">Coelho<span class="log">Log</span></div>
+    <div class="brand-sub">Logística e Transporte</div>
+
+    <div class="card">
+      <h1>Login</h1>
+      <p>Acesse o painel financeiro para analisar as empresas.</p>
+
+      <div class="grid">
+        <div>
+          <label for="email">E-mail</label>
+          <input id="email" type="email" autocomplete="username" value="bruno@coelholog.com.br" />
+        </div>
+        <div>
+          <label for="senha">Senha</label>
+          <input id="senha" type="password" autocomplete="current-password" placeholder="Digite sua senha" />
+        </div>
+      </div>
+
+      <button class="btn" onclick="login()">Entrar</button>
+      <div id="msg" class="msg"></div>
+    </div>
+
+    <div class="footer">© CoelhoLog • Painel Financeiro</div>
+  </div>
+
+<script>
+async function login(){
+  const email = document.getElementById('email').value.trim();
+  const senha = document.getElementById('senha').value;
+  const msg = document.getElementById('msg');
+  msg.className='msg';
+  msg.textContent='';
+
+  if(!email || !senha){
+    msg.className='msg err';
+    msg.textContent='Informe e-mail e senha.';
+    return;
+  }
+
+  const r = await fetch('/api/fin/login', {
+    method:'POST',
+    headers:{'Content-Type':'application/json'},
+    body: JSON.stringify({ email, senha })
+  });
+
+  const data = await r.json().catch(()=> ({}));
+  if(!r.ok || !data?.user){
+    msg.className='msg err';
+    msg.textContent='Falha no login.';
+    return;
+  }
+
+  localStorage.setItem('fin_usuario', JSON.stringify(data.user));
+  location.href = '/finance/dashboard.html';
+}
+</script>
+</body>
+</html>
