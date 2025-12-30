@@ -23,3 +23,24 @@ tr:nth-child(even){background:#ffffff10;}
 .sidebar a:hover{background:#ffffff12;}
 .main{margin-left:220px;padding:18px 22px;}
 .small{font-size:12px;opacity:.8;}
+.chart-legend{
+  margin-top:8px;
+  display:flex;
+  gap:14px;
+  flex-wrap:wrap;
+  align-items:center;
+  font-size:12px;
+  opacity:.95;
+}
+.chart-legend .lg-item{
+  display:flex;
+  align-items:center;
+  gap:6px;
+}
+.chart-legend .lg-dot{
+  width:10px;
+  height:10px;
+  border-radius:50%;
+  display:inline-block;
+  border:1px solid rgba(255,255,255,.35);
+}
