@@ -991,5 +991,5 @@ app.get('/api/fin/relatorio/pdf', (req,res)=>{
 });
 
 
-const PORT = process.env.PORT || 3000;
+const PORT = process.env.PORT || 5050;
 app.listen(PORT, ()=> console.log('Financeiro rodando na porta', PORT));
