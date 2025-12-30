@@ -23,6 +23,3 @@ tr:nth-child(even){background:#ffffff10;}
 .sidebar a:hover{background:#ffffff12;}
 .main{margin-left:220px;padding:18px 22px;}
 .small{font-size:12px;opacity:.8;}
-.legend{display:inline-flex;align-items:center;gap:8px;flex-wrap:wrap;}
-.legend-item{display:inline-flex;align-items:center;gap:6px;margin-right:10px;}
-.legend-dot{width:10px;height:10px;border-radius:3px;display:inline-block;}

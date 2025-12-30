@@ -13,39 +13,6 @@ app.use(express.static(path.join(__dirname, '../public')));
 const DB = path.join(__dirname, 'sql', 'financeiro.db');
 const db = new sqlite3.Database(DB);
 
-// ------------------------------------------------------------------
-// Admin padrão (auto-seed)
-// ------------------------------------------------------------------
-// Em alguns deploys (Render/VPS), o arquivo do banco pode iniciar vazio
-// ou ser substituído. Para evitar "Falha no login" mesmo com credenciais
-// corretas, garantimos que exista pelo menos 1 usuário admin.
-const DEFAULT_ADMINS = [
-  { email: 'bruno@coelholog.com.br', senha: 'admin123', nome: 'Bruno', role: 'admin' },
-  { email: 'financeiro@coelholog.com', senha: 'admin123', nome: 'Financeiro', role: 'admin' },
-];
-
-db.serialize(() => {
-  db.run(`CREATE TABLE IF NOT EXISTS usuarios_financeiro (
-    id INTEGER PRIMARY KEY AUTOINCREMENT,
-    email TEXT UNIQUE,
-    senha TEXT,
-    nome TEXT,
-    role TEXT
-  )`);
-
-  DEFAULT_ADMINS.forEach(u => {
-    db.get('SELECT id FROM usuarios_financeiro WHERE email = ?', [u.email], (err, row) => {
-      if (err) return;
-      if (!row) {
-        db.run(
-          'INSERT INTO usuarios_financeiro (email, senha, nome, role) VALUES (?, ?, ?, ?)',
-          [u.email, u.senha, u.nome, u.role]
-        );
-      }
-    });
-  });
-});
-
 
 function monthKey(ano, mes){
   return `${ano}-${String(mes).padStart(2,'0')}`;
@@ -78,34 +45,8 @@ function healthIndicator(margem, saldo) {
 app.get('/', (req,res)=> res.sendFile(path.join(__dirname,'../public/finance/login.html')));
 
 app.post('/api/fin/login', (req,res)=>{
-  let { email, senha } = req.body || {};
-
-  // Normalização + compatibilidade de domínio.
-  // Aceita variações comuns:
-  // - @coelho.com  -> @coelholog.com.br
-  // - @coelholog.com <-> @coelholog.com.br
-  const raw = (typeof email === 'string' ? email.trim().toLowerCase() : '');
-  const candidates = new Set();
-  if (raw) {
-    candidates.add(raw);
-    if (raw.endsWith('@coelho.com')) {
-      candidates.add(raw.replace(/@coelho\.com$/,'@coelholog.com.br'));
-      candidates.add(raw.replace(/@coelho\.com$/,'@coelholog.com'));
-    }
-    if (raw.endsWith('@coelholog.com')) {
-      candidates.add(raw.replace(/@coelholog\.com$/,'@coelholog.com.br'));
-    }
-    if (raw.endsWith('@coelholog.com.br')) {
-      candidates.add(raw.replace(/@coelholog\.com\.br$/,'@coelholog.com'));
-    }
-  }
-
-  const emailList = Array.from(candidates);
-  const placeholders = emailList.map(()=>'?').join(',');
-  const sql = `SELECT id,nome,email,role FROM usuarios_financeiro WHERE email IN (${placeholders}) AND senha=?`;
-  const params = [...emailList, String(senha||'')];
-
-  db.get(sql, params, (err,row)=>{
+  const { email, senha } = req.body;
+  db.get('SELECT id,nome,email,role FROM usuarios_financeiro WHERE email=? AND senha=?', [email, senha], (err,row)=>{
     if (err) return res.status(500).json({ error:'db' });
     if (!row) return res.status(401).json({ error:'invalid' });
     res.json(row);
