@@ -1,0 +1,72 @@
+<!doctype html><html lang="pt-BR"><head>
+<meta charset="utf-8"/><meta name="viewport" content="width=device-width, initial-scale=1"/>
+<title>Impostos</title><link rel="stylesheet" href="/css/finance.css"/></head>
+<body>
+<div id="sb"></div>
+<div class="main">
+  <h2 style="margin:0 0 6px 0;">🧾 Impostos (Simples)</h2>
+  <div class="small" style="margin-bottom:12px;">Cadastre a % média por empresa para calcular imposto estimado e receita líquida.</div>
+
+  <div class="top">
+    <select id="empresa" class="input"></select>
+    <button class="btn" onclick="carregar()">Carregar</button>
+  </div>
+
+  <div class="card" style="margin-top:12px; max-width:720px;">
+    <h3 style="margin:0 0 12px 0;">Configuração</h3>
+    <div style="display:flex; flex-wrap:wrap; gap:10px;">
+      <div style="flex:1; min-width:200px;">
+        <div class="small">Simples (%)</div>
+        <input id="simples" class="input" type="number" step="0.01" placeholder="Ex: 6.00"/>
+      </div>
+      <div style="flex:1; min-width:200px;">
+        <div class="small">Taxas (%) (opcional)</div>
+        <input id="taxas" class="input" type="number" step="0.01" placeholder="Ex: 2.50"/>
+      </div>
+      <div style="flex:1; min-width:200px;">
+        <div class="small">Outros (%) (opcional)</div>
+        <input id="outros" class="input" type="number" step="0.01" placeholder="Ex: 1.00"/>
+      </div>
+    </div>
+    <div style="display:flex; gap:10px; margin-top:14px; justify-content:flex-end;">
+      <button class="btn secondary" onclick="carregar()">Recarregar</button>
+      <button class="btn" onclick="salvar()">Salvar</button>
+    </div>
+    <div id="msg" class="small" style="margin-top:8px;"></div>
+  </div>
+</div>
+
+<script>
+(function mustLogin(){ const u=localStorage.getItem('fin_user'); if(!u) location.href='/finance/login.html'; })();
+fetch('/components/sidebar_finance.html').then(r=>r.text()).then(html=>document.getElementById('sb').innerHTML=html);
+
+const empresaSel=document.getElementById('empresa');
+const simples=document.getElementById('simples');
+const taxas=document.getElementById('taxas');
+const outros=document.getElementById('outros');
+const msg=document.getElementById('msg');
+
+async function carregarEmpresas(){
+  const r=await fetch('/api/fin/empresas');
+  const rows=await r.json();
+  empresaSel.innerHTML=rows.map(e=>`<option value="${e.id}">${e.nome}</option>`).join('');
+}
+async function carregar(){
+  msg.textContent='Carregando...';
+  const empresa_id=empresaSel.value;
+  const r=await fetch(`/api/fin/impostos?empresa_id=${empresa_id}`);
+  const d=await r.json();
+  simples.value=d.simples_percent ?? 0;
+  taxas.value=d.taxas_percent ?? 0;
+  outros.value=d.outros_percent ?? 0;
+  msg.textContent='OK.';
+}
+async function salvar(){
+  msg.textContent='Salvando...';
+  const payload={ empresa_id:Number(empresaSel.value), simples_percent:Number(simples.value||0), taxas_percent:Number(taxas.value||0), outros_percent:Number(outros.value||0) };
+  const r=await fetch('/api/fin/impostos',{method:'PUT',headers:{'Content-Type':'application/json'},body:JSON.stringify(payload)});
+  msg.textContent=r.ok?'Salvo!':'Erro ao salvar.';
+}
+carregarEmpresas().then(carregar);
+</script>
+</body></html>
