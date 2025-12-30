@@ -1,9 +1,5 @@
 CoelhoLog - Sistema Financeiro (separado)
 
-Login padrão:
-- Email: financeiro@coelho.com
-- Senha: admin123
-
 Rodar:
 1) npm install
 2) npm start
