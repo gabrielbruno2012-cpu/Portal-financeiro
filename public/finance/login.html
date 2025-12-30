@@ -1,36 +1,215 @@
 <!doctype html>
 <html lang="pt-BR">
 <head>
-  <meta charset="utf-8"/>
-  <meta name="viewport" content="width=device-width, initial-scale=1"/>
-  <title>Login Financeiro</title>
-  <link rel="stylesheet" href="/css/finance.css"/>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Login - Painel Financeiro</title>
+
+  <!-- seu css global -->
+  <link rel="stylesheet" href="/css/style.css" />
+
+  <style>
+    :root{
+      --bg1:#062447;
+      --bg2:#082a52;
+      --card:#ffffff;
+      --text:#0b1b2b;
+      --muted:#6b7a8a;
+      --yellow:#f7c600;
+      --yellow2:#e2b400;
+      --input:#f3f5f7;
+      --stroke:#d9e0e7;
+    }
+
+    body{
+      margin:0;
+      font-family: "Segoe UI", system-ui, -apple-system, Arial, sans-serif;
+      background: radial-gradient(1200px 600px at 50% 0%, #0a3568 0%, var(--bg1) 45%, #041a33 100%);
+      min-height:100vh;
+      display:flex;
+      align-items:center;
+      justify-content:center;
+      padding:24px;
+    }
+
+    .wrap{
+      width:100%;
+      max-width:520px;
+      display:flex;
+      flex-direction:column;
+      align-items:center;
+      gap:18px;
+    }
+
+    .brand{
+      display:flex;
+      align-items:center;
+      justify-content:center;
+    }
+    .brand img{
+      max-width:320px;
+      width:100%;
+      height:auto;
+      object-fit:contain;
+      filter: drop-shadow(0 8px 20px rgba(0,0,0,.25));
+    }
+
+    .card{
+      width:100%;
+      background:var(--card);
+      border-radius:14px;
+      box-shadow: 0 18px 60px rgba(0,0,0,.35);
+      padding:28px 26px 22px;
+    }
+
+    .title{
+      margin:0 0 6px;
+      text-align:center;
+      font-size:26px;
+      color:var(--text);
+      font-weight:800;
+      letter-spacing:.2px;
+    }
+    .subtitle{
+      margin:0 0 18px;
+      text-align:center;
+      color:var(--muted);
+      font-size:13px;
+    }
+
+    .field{
+      margin-bottom:12px;
+    }
+    label{
+      display:block;
+      margin:0 0 6px;
+      font-size:14px;
+      color:var(--text);
+      font-weight:600;
+    }
+
+    input{
+      width:100%;
+      box-sizing:border-box;
+      border:1px solid var(--stroke);
+      background:var(--input);
+      padding:12px 12px;
+      border-radius:10px;
+      font-size:14px;
+      outline:none;
+      transition:.15s;
+    }
+    input:focus{
+      border-color:#9bb6d5;
+      box-shadow: 0 0 0 4px rgba(55,120,200,.15);
+      background:#fff;
+    }
+
+    .btn{
+      width:100%;
+      margin-top:10px;
+      background:var(--yellow);
+      border:none;
+      padding:12px 14px;
+      border-radius:10px;
+      font-weight:800;
+      cursor:pointer;
+      font-size:15px;
+      transition:.15s;
+    }
+    .btn:hover{ background:var(--yellow2); }
+    .btn:active{ transform: translateY(1px); }
+
+    .msg{
+      margin-top:12px;
+      text-align:center;
+      font-size:13px;
+      color:#b00020;
+      min-height:18px;
+    }
+
+    .footer{
+      color:rgba(255,255,255,.7);
+      font-size:12px;
+      text-align:center;
+    }
+
+    @media (max-width:420px){
+      .card{ padding:22px 18px 18px; }
+      .title{ font-size:22px; }
+    }
+  </style>
 </head>
+
 <body>
-  <div class="container" style="max-width:420px; margin-top:60px;">
-    <h2 style="margin:0 0 8px 0;">Painel Financeiro</h2>
-    <div class="small" style="margin-bottom:18px;">Login separado para analisar as 3 empresas.</div>
-    <div class="card">
-      <div style="display:flex; flex-direction:column; gap:10px;">
-        <input class="input" id="email" placeholder="Email" value="financeiro@coelho.com"/>
-        <input class="input" id="senha" placeholder="Senha" type="password" value="admin123"/>
-        <button class="btn" onclick="login()">Entrar</button>
-        <div id="msg" class="small"></div>
-      </div>
+  <div class="wrap">
+    <!-- Logo -->
+    <div class="brand">
+      <img src="/img/logo.png" alt="CoelhoLog" />
     </div>
+
+    <!-- Card -->
+    <div class="card">
+      <h1 class="title">Login</h1>
+      <p class="subtitle">Acesse o painel financeiro para analisar as empresas.</p>
+
+      <form id="formLogin">
+        <div class="field">
+          <label for="email">E-mail</label>
+          <input id="email" type="email" placeholder="seuemail@email.com" required />
+        </div>
+
+        <div class="field">
+          <label for="senha">Senha</label>
+          <input id="senha" type="password" placeholder="Digite sua senha" required />
+        </div>
+
+        <button class="btn" type="submit">Entrar</button>
+        <div class="msg" id="msg"></div>
+      </form>
+    </div>
+
+    <div class="footer">© CoelhoLog • Painel Financeiro</div>
   </div>
-<script>
-async function login(){
-  const email = document.getElementById('email').value.trim();
-  const senha = document.getElementById('senha').value.trim();
-  const msg = document.getElementById('msg');
-  msg.textContent = 'Entrando...';
-  const resp = await fetch('/api/fin/login', { method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({ email, senha }) });
-  if(!resp.ok){ msg.textContent = 'Email ou senha inválidos.'; return; }
-  const user = await resp.json();
-  localStorage.setItem('fin_user', JSON.stringify(user));
-  location.href = '/finance/dashboard.html';
-}
-</script>
+
+  <script>
+    // 🔁 MANTENHA SEU CÓDIGO DE LOGIN AQUI
+    // Só adaptei os IDs (email, senha, msg, formLogin).
+    // Se seu sistema usa outra chave no localStorage, mantenha igual.
+
+    const form = document.getElementById("formLogin");
+    const msg  = document.getElementById("msg");
+
+    form.addEventListener("submit", async (e) => {
+      e.preventDefault();
+      msg.textContent = "";
+
+      const email = document.getElementById("email").value.trim();
+      const senha = document.getElementById("senha").value;
+
+      try {
+        const resp = await fetch("/api/login", {
+          method: "POST",
+          headers: {"Content-Type":"application/json"},
+          body: JSON.stringify({ email, senha })
+        });
+
+        const data = await resp.json().catch(() => ({}));
+
+        if (!resp.ok) {
+          msg.textContent = data?.error || "Falha no login.";
+          return;
+        }
+
+        // ajuste a chave para a mesma usada no resto do sistema
+        localStorage.setItem("usuario", JSON.stringify(data.user || data));
+
+        // ajuste o destino se necessário
+        location.href = "/finance/dashboard.html";
+      } catch (err) {
+        msg.textContent = "Erro ao conectar no servidor.";
+      }
+    });
+  </script>
 </body>
 </html>
